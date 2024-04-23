@@ -3,7 +3,7 @@
 import argparse
 import random
 import time
-
+import os
 import numpy as np
 import torch
 from config import get_config
@@ -150,6 +150,8 @@ if __name__ == "__main__":
             train_loader = data_loader.BP4DPlusBigSmallLoader.BP4DPlusBigSmallLoader
         elif config.TRAIN.DATA.DATASET == "UBFC-PHYS":
             train_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
+        elif config.TEST.DATA.DATASET == "CBIC":
+            train_loader  = data_loader.CBICLoader.CBICLoader 
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
                              SCAMPS, BP4D+ (Normal and BigSmall preprocessing), and UBFC-PHYS.")
@@ -188,6 +190,8 @@ if __name__ == "__main__":
             valid_loader = data_loader.BP4DPlusBigSmallLoader.BP4DPlusBigSmallLoader
         elif config.VALID.DATA.DATASET == "UBFC-PHYS":
             valid_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
+        elif config.TEST.DATA.DATASET == "CBIC":
+            valid_loader = data_loader.CBICLoader.CBICLoader    
         elif config.VALID.DATA.DATASET is None and not config.TEST.USE_LAST_EPOCH:
             raise ValueError("Validation dataset not specified despite USE_LAST_EPOCH set to False!")
         else:
@@ -228,6 +232,8 @@ if __name__ == "__main__":
             test_loader = data_loader.BP4DPlusBigSmallLoader.BP4DPlusBigSmallLoader
         elif config.TEST.DATA.DATASET == "UBFC-PHYS":
             test_loader = data_loader.UBFCPHYSLoader.UBFCPHYSLoader
+        elif config.TEST.DATA.DATASET == "CBIC":
+            test_loader = data_loader.CBICLoader.CBICLoader
         else:
             raise ValueError("Unsupported dataset! Currently supporting UBFC-rPPG, PURE, MMPD, \
                              SCAMPS, BP4D+ (Normal and BigSmall preprocessing), and UBFC-PHYS.")
@@ -238,6 +244,7 @@ if __name__ == "__main__":
         # Create and initialize the test dataloader given the correct toolbox mode,
         # a supported dataset name, and a valid dataset path
         if config.TEST.DATA.DATASET and config.TEST.DATA.DATA_PATH:
+            #print(config.TEST.DATA.DATA_PATH)
             test_data = test_loader(
                 name="test",
                 data_path=config.TEST.DATA.DATA_PATH,

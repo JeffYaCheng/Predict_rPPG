@@ -14,11 +14,12 @@ import re
 
 import cv2
 import numpy as np
+import pandas as pd
 from dataset.data_loader.BaseLoader import BaseLoader
 from tqdm import tqdm
 
 
-class PURELoader(BaseLoader):
+class CBICLoader(BaseLoader):
     """The data loader for the PURE dataset."""
 
     def __init__(self, name, data_path, config_data):
@@ -29,15 +30,15 @@ class PURELoader(BaseLoader):
                 -----------------
                      RawData/
                      |   |-- 01-01/
-                     |      |-- 01-01/
-                     |      |-- 01-01.json
+                     |      |-- output.avi
+                     |      |-- PPG_R.csv
                      |   |-- 01-02/
-                     |      |-- 01-02/
-                     |      |-- 01-02.json
+                     |      |-- output.avi
+                     |      |-- PPG_R.csv
                      |...
                      |   |-- ii-jj/
-                     |      |-- ii-jj/
-                     |      |-- ii-jj.json
+                     |      |-- output.avi
+                     |      |-- PPG_R.csv
                 -----------------
                 name(str): name of the dataloader.
                 config_data(CfgNode): data settings(ref:config.py).
@@ -62,6 +63,21 @@ class PURELoader(BaseLoader):
         """Returns a subset of data dirs, split with begin and end values, 
         and ensures no overlapping subjects between splits"""
 
+        if begin == 0 and end == 1:  # return the full directory if begin == 0 and end == 1
+            return data_dirs
+
+        file_num = len(data_dirs)
+        choose_range = range(int(begin * file_num), int(end * file_num))
+        data_dirs_new = []
+
+        for i in choose_range:
+            data_dirs_new.append(data_dirs[i])
+            
+        print(data_dirs_new)
+        return data_dirs_new
+    
+        #split by people (07-01'07-02'    08-01'08-02   09-11'09-15)
+        """
         # return the full directory
         if begin == 0 and end == 1:
             return data_dirs
@@ -96,6 +112,7 @@ class PURELoader(BaseLoader):
             # chunk num)
 
         return data_dirs_new
+        """
 
     def preprocess_dataset_subprocess(self, data_dirs, config_preprocess, i, file_list_dict):
         """ Invoked by preprocess_dataset for multi_process. """
@@ -106,7 +123,7 @@ class PURELoader(BaseLoader):
         if 'None' in config_preprocess.DATA_AUG:
             # Utilize dataset-specific function to read video
             frames = self.read_video(
-                os.path.join(data_dirs[i]['path'], filename, ""))
+                os.path.join(data_dirs[i]['path'], "output.avi"))
         elif 'Motion' in config_preprocess.DATA_AUG:
             # Utilize general function to read video in .npy format
             frames = self.read_npy_video(
@@ -118,8 +135,7 @@ class PURELoader(BaseLoader):
         if config_preprocess.USE_PSUEDO_PPG_LABEL:
             bvps = self.generate_pos_psuedo_labels(frames, fs=self.config_data.FS)
         else:
-            bvps = self.read_wave(
-                os.path.join(data_dirs[i]['path'], "{0}.json".format(filename)))
+            bvps = self.read_wave(os.path.join(data_dirs[i]['path'], "PPG_R.csv"))
 
         target_length = frames.shape[0]
         bvps = BaseLoader.resample_ppg(bvps, target_length)
@@ -130,19 +146,25 @@ class PURELoader(BaseLoader):
     @staticmethod
     def read_video(video_file):
         """Reads a video file, returns frames(T, H, W, 3) """
+        VidObj = cv2.VideoCapture(video_file)
+        VidObj.set(cv2.CAP_PROP_POS_MSEC, 0)
+        success, frame = VidObj.read()
         frames = list()
-        all_png = sorted(glob.glob(video_file + '*.png'))
-        for png_path in all_png:
-            img = cv2.imread(png_path)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            frames.append(img)
+        while success:
+            frame = cv2.cvtColor(np.array(frame), cv2.COLOR_BGR2RGB)
+            frame = np.asarray(frame)
+            frames.append(frame)
+            success, frame = VidObj.read()
         return np.asarray(frames)
 
     @staticmethod
     def read_wave(bvp_file):
         """Reads a bvp signal file."""
-        with open(bvp_file, "r") as f:
-            labels = json.load(f)
-            waves = [label["Value"]["waveform"]
-                     for label in labels["/FullPackage"]]
+        waves=pd.read_csv(bvp_file)
+        waves=waves*-1
+        waves=waves.values.reshape(1,-1)
+        waves=waves.tolist()
+        waves=waves[0]
+        for i in range(len(waves)):
+            waves[i]=int(waves[i])
         return np.asarray(waves)
