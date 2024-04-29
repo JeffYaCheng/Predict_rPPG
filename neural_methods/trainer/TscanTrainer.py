@@ -2,9 +2,11 @@
 
 import logging
 import os
+import shutil
 from collections import OrderedDict
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.optim as optim
 from evaluation.metrics import calculate_metrics
@@ -13,6 +15,10 @@ from neural_methods.model.TS_CAN import TSCAN
 from neural_methods.trainer.BaseTrainer import BaseTrainer
 from tqdm import tqdm
 
+from evaluation.post_process import _detrend
+from scipy.signal import butter
+import matplotlib.pyplot as plt
+import scipy
 
 class TscanTrainer(BaseTrainer):
 
@@ -202,6 +208,12 @@ class TscanTrainer(BaseTrainer):
         calculate_metrics(predictions, labels, self.config)
         if self.config.TEST.OUTPUT_SAVE_DIR: # saving test outputs
             self.save_test_outputs(predictions, labels, self.config)
+    
+        if self.config.TOOLBOX_MODE == "train_and_test":
+                labelfilterflag = 0       	
+        elif self.config.TOOLBOX_MODE == "only_test":
+                labelfilterflag = 1
+        self.visualize_waveform(predictions, labels, labelfilterflag)
 
     def save_model(self, index):
         if not os.path.exists(self.model_dir):
@@ -210,3 +222,77 @@ class TscanTrainer(BaseTrainer):
             self.model_dir, self.model_file_name + '_Epoch' + str(index) + '.pth')
         torch.save(self.model.state_dict(), model_path)
         print('Saved Model Path: ', model_path)
+
+    def visualize_waveform(self, predictions, labels, labelfilterflag):
+        #pic_path = "/home/cbicserver/Desktop/Jeff/rPPG-Toolbox/waveforms/"
+        pic_path =os.path.join(self.config.TEST.OUTPUT_SAVE_DIR, 'waveforms')
+        if os.path.isdir(pic_path):
+            print("path has existed")
+            shutil.rmtree(pic_path)
+        os.mkdir(pic_path)
+        pred_keys = predictions.keys()
+        Cor_list=list()
+        MAE_list=list()
+        name=list()
+        for pred_key in pred_keys:
+            sorts = predictions[pred_key].keys()
+            t_Cor=0
+            t_MAE=0
+            counter=0
+            for sort in sorts:
+                
+                pic_name = os.path.join(pic_path,pred_key + "_" + str(sort) + ".png")
+                
+                # print("getting ",pic_name)
+               
+                
+                prediction = predictions[pred_key][sort].squeeze().tolist()
+                ground_truth = labels[pred_key][sort].squeeze().tolist()
+                
+                # bandpass
+                fs = 30 # 30fps
+                [b, a] = butter(1, [0.75 / fs * 2, 2.5 / fs * 2], btype='bandpass')
+                #[b, a] = butter(1, [0.1 / fs * 2, 10 / fs * 2], btype='bandpass')
+                
+                if labelfilterflag==1: # detrend and filter prediction and ground_truth
+                    prediction = _detrend(np.cumsum(prediction), 100)
+                    prediction = scipy.signal.filtfilt(b, a, np.double(prediction))
+                    ground_truth = _detrend(np.cumsum(ground_truth), 100)
+                    ground_truth = scipy.signal.filtfilt(b, a, np.double(ground_truth))
+                    #prediction = scipy.signal.filtfilt(b, a, np.double(prediction))
+                    #ground_truth = scipy.signal.filtfilt(b, a, np.double(ground_truth))
+                elif labelfilterflag==2: # detrend and filter prediction
+                    prediction = _detrend(np.cumsum(prediction), 100)
+                    prediction = scipy.signal.filtfilt(b, a, np.double(prediction))
+                # detrend???           
+                #ground_truth = scipy.signal.filtfilt(b, a, np.double(ground_truth))
+                
+                # add MAE and pearson to each wave
+                MAE = np.mean(np.abs(prediction - ground_truth))
+                Cor = np.corrcoef(prediction, ground_truth)[0][1]
+                t_Cor+=Cor
+                t_MAE+=MAE
+                fps=30
+                time = np.arange(0, len(prediction)) * (1.0 / fps)
+
+                plt.plot(time,prediction, label='prediction')
+                plt.plot(time,ground_truth, label='ground_truth')
+                counter+=1
+                if counter==len(sorts):
+                    #print()
+                    #print('t_Cor=',t_Cor,'len(sorts)=',len(sorts),'average=',round((t_Cor/len(sorts)),3))
+                    plt.title(f'{pred_key}_{str(sort)} MAE={round(MAE,3)} Cor={round(Cor,3)} t_MAE={round((t_MAE/len(sorts)),3)} t_Cor={round((t_Cor/len(sorts)),3)}' ) 
+                    MAE_list.append(round((t_MAE/len(sorts)),3))   
+                    Cor_list.append(round((t_Cor/len(sorts)),3)) 
+                    name.append(pred_key)
+                else:
+                    plt.title(f'{pred_key}_{str(sort)} MAE={round(MAE,3)} Cor={round(Cor,3)}')
+                plt.xlabel('time(s)')
+                plt.ylabel('PPG')
+                plt.legend()
+                plt.savefig(pic_name)
+                plt.close()
+        
+        result_dict={'name':name,'Cor':Cor_list,'MAE':MAE_list}
+        df=pd.DataFrame(result_dict)
+        df.to_csv(os.path.join(pic_path,'result.csv'))

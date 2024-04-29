@@ -114,7 +114,7 @@ class CBICLoader(BaseLoader):
         return data_dirs_new
         """
 
-    def preprocess_dataset_subprocess(self, data_dirs, config_preprocess, i, file_list_dict):
+    def preprocess_dataset_subprocess(self, data_dirs, config_preprocess, i, file_list_dict,lighting_info):
         """ Invoked by preprocess_dataset for multi_process. """
         filename = os.path.split(data_dirs[i]['path'])[-1]
         saved_filename = data_dirs[i]['index']
@@ -139,8 +139,9 @@ class CBICLoader(BaseLoader):
 
         target_length = frames.shape[0]
         bvps = BaseLoader.resample_ppg(bvps, target_length)
-        frames_clips, bvps_clips = self.preprocess(frames, bvps, config_preprocess)
-        input_name_list, label_name_list = self.save_multi_process(frames_clips, bvps_clips, saved_filename)
+        frames_clips, bvps_clips,mean,std = self.preprocess(frames, bvps, config_preprocess)
+        lighting_info[saved_filename]=[mean,std]
+        input_name_list, label_name_list = self.save_multi_process(frames_clips, bvps_clips, saved_filename,mean,std)
         file_list_dict[i] = input_name_list
 
     @staticmethod

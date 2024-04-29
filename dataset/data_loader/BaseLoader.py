@@ -23,6 +23,8 @@ import pandas as pd
 from torch.utils.data import Dataset
 from tqdm import tqdm
 from retinaface import RetinaFace   # Source code: https://github.com/serengil/retinaface
+import shutil
+import matplotlib.pyplot as plt
 
 
 class BaseLoader(Dataset):
@@ -242,7 +244,8 @@ class BaseLoader(Dataset):
             elif data_type == "DiffNormalized":
                 data.append(BaseLoader.diff_normalize_data(f_c))
             elif data_type == "Standardized":
-                data.append(BaseLoader.standardized_data(f_c))
+                img,mean,std=BaseLoader.standardized_data(f_c)
+                data.append(img)
             else:
                 raise ValueError("Unsupported data type!")
         data = np.concatenate(data, axis=-1)  # concatenate all channels
@@ -262,7 +265,7 @@ class BaseLoader(Dataset):
             frames_clips = np.array([data])
             bvps_clips = np.array([bvps])
 
-        return frames_clips, bvps_clips
+        return frames_clips, bvps_clips,mean,std
 
     def face_detection(self, frame, backend, use_larger_box=False, larger_box_coef=1.0):
         """Face detection on a single frame.
@@ -427,6 +430,9 @@ class BaseLoader(Dataset):
 
         if not os.path.exists(self.cached_path):
             os.makedirs(self.cached_path, exist_ok=True)
+        pic_path =os.path.join(self.cached_path ,'preprocessing_img')
+        if not os.path.exists(pic_path):
+            os.makedirs(pic_path, exist_ok=True)
         count = 0
         for i in range(len(bvps_clips)):
             assert (len(self.inputs) == len(self.labels))
@@ -436,10 +442,30 @@ class BaseLoader(Dataset):
             self.labels.append(label_path_name)
             np.save(input_path_name, frames_clips[i])
             np.save(label_path_name, bvps_clips[i])
+
+            #save preprocessing img
+            fig, ax = plt.subplots(figsize=(6, 3))
+            fig.tight_layout()
+            ax.set_xticks([])
+            ax.set_yticks([])
+            rgbframe = frames_clips[i][..., 3:]
+            diffframe = frames_clips[i][..., :3]
+            combined_frame = np.concatenate((rgbframe[0], diffframe[0]), axis=1)
+            if np.issubdtype(combined_frame.dtype, np.floating):
+                combined_frame = np.clip(combined_frame, 0, 1)  # Clip float pixel values to [0, 1]
+            elif np.issubdtype(combined_frame.dtype, np.integer):
+                combined_frame = np.clip(combined_frame, 0, 255)  # Clip integer pixel values to [0, 255]
+            else:
+                raise ValueError("Unsupported pixel value data type.")
+            ax.clear()
+            ax.imshow(combined_frame)
+            ax.title.set_text(f'{filename}_input{str(count)}')
+            pic_name = os.path.join(pic_path,"{0}_input{1}.png".format(filename, str(count)))
+            plt.savefig(pic_name)
             count += 1
         return count
 
-    def save_multi_process(self, frames_clips, bvps_clips, filename):
+    def save_multi_process(self, frames_clips, bvps_clips, filename,mean,std):
         """Save all the chunked data with multi-thread processing.
 
         Args:
@@ -452,6 +478,11 @@ class BaseLoader(Dataset):
         """
         if not os.path.exists(self.cached_path):
             os.makedirs(self.cached_path, exist_ok=True)
+            
+        pic_path =os.path.join(self.cached_path ,'preprocessing_img')
+        if not os.path.exists(pic_path):
+            os.makedirs(pic_path, exist_ok=True)
+            
         count = 0
         input_path_name_list = []
         label_path_name_list = []
@@ -463,6 +494,26 @@ class BaseLoader(Dataset):
             label_path_name_list.append(label_path_name)
             np.save(input_path_name, frames_clips[i])
             np.save(label_path_name, bvps_clips[i])
+            
+            #save preprocessing img
+            fig, ax = plt.subplots(figsize=(6, 3))
+            fig.tight_layout()
+            ax.set_xticks([])
+            ax.set_yticks([])
+            rgbframe = frames_clips[i][..., 3:]
+            diffframe = frames_clips[i][..., :3]
+            combined_frame = np.concatenate((rgbframe[0], diffframe[0]), axis=1)
+            if np.issubdtype(combined_frame.dtype, np.floating):
+                combined_frame = np.clip(combined_frame, 0, 1)  # Clip float pixel values to [0, 1]
+            elif np.issubdtype(combined_frame.dtype, np.integer):
+                combined_frame = np.clip(combined_frame, 0, 255)  # Clip integer pixel values to [0, 255]
+            else:
+                raise ValueError("Unsupported pixel value data type.")
+            ax.clear()
+            ax.imshow(combined_frame)
+            ax.title.set_text(f'{filename}_input{str(count)} mean={mean},std={std}')
+            pic_name = os.path.join(pic_path,"{0}_input{1}.png".format(filename, str(count)))
+            plt.savefig(pic_name)
             count += 1
         return input_path_name_list, label_path_name_list
 
@@ -486,6 +537,7 @@ class BaseLoader(Dataset):
         file_list_dict = manager.dict()  # dictionary for all processes to store processed files
         p_list = []  # list of processes
         running_num = 0  # number of running processes
+        lighting_info= manager.dict()
 
         # in range of number of files to process
         for i in choose_range:
@@ -494,7 +546,7 @@ class BaseLoader(Dataset):
                 if running_num < multi_process_quota:  # in case of too many processes
                     # send data to be preprocessing task
                     p = Process(target=self.preprocess_dataset_subprocess, 
-                                args=(data_dirs,config_preprocess, i, file_list_dict))
+                                args=(data_dirs,config_preprocess, i, file_list_dict,lighting_info))
                     p.start()
                     p_list.append(p)
                     running_num += 1
@@ -511,6 +563,18 @@ class BaseLoader(Dataset):
             pbar.update(1)
         pbar.close()
 
+        pic_path =os.path.join(self.cached_path ,'preprocessing_img')
+        saved_filename=list()
+        mean=list()
+        std=list()
+        print(data_dirs)
+        for key,value in  lighting_info.items():
+            saved_filename.append(key)
+            mean.append(value[0])
+            std.append(value[1])
+        lighting_dict={'name':saved_filename,'mean':mean,'std':std}
+        df=pd.DataFrame(lighting_dict)
+        df.to_csv(os.path.join(pic_path,'lighting.csv'))
         return file_list_dict
 
     def build_file_list(self, file_list_dict):
@@ -593,12 +657,17 @@ class BaseLoader(Dataset):
     def diff_normalize_data(data):
         """Calculate discrete difference in video data along the time-axis and nornamize by its standard deviation."""
         n, h, w, c = data.shape
-        diffnormalized_len = n - 1
+        diffnormalized_len = n - 5
         diffnormalized_data = np.zeros((diffnormalized_len, h, w, c), dtype=np.float32)
-        diffnormalized_data_padding = np.zeros((1, h, w, c), dtype=np.float32)
+        diffnormalized_data_padding = np.zeros((5, h, w, c), dtype=np.float32)
+        #adjust preprocessing img by moving average filter
         for j in range(diffnormalized_len):
-            diffnormalized_data[j, :, :, :] = (data[j + 1, :, :, :] - data[j, :, :, :]) / (
-                    data[j + 1, :, :, :] + data[j, :, :, :] + 1e-7)
+            diffnormalized_data[j, :, :, :] = ((data[j + 1, :, :, :] - data[j, :, :, :]) / (
+                    data[j + 1, :, :, :] + data[j, :, :, :] + 1e-7)+(data[j + 2, :, :, :] - data[j+1, :, :, :]) / (
+                    data[j + 2, :, :, :] + data[j+1, :, :, :] + 1e-7)+(data[j + 3, :, :, :] - data[j+2, :, :, :]) / (
+                    data[j + 3, :, :, :] + data[j+2, :, :, :] + 1e-7)+(data[j + 4, :, :, :] - data[j+3, :, :, :]) / (
+                    data[j + 4, :, :, :] + data[j+3, :, :, :] + 1e-7)+(data[j + 5, :, :, :] - data[j+4, :, :, :]) / (
+                    data[j + 5, :, :, :] + data[j+4, :, :, :] + 1e-7))/(5+1e-7)
         diffnormalized_data = diffnormalized_data / np.std(diffnormalized_data)
         diffnormalized_data = np.append(diffnormalized_data, diffnormalized_data_padding, axis=0)
         diffnormalized_data[np.isnan(diffnormalized_data)] = 0
@@ -616,10 +685,12 @@ class BaseLoader(Dataset):
     @staticmethod
     def standardized_data(data):
         """Z-score standardization for video data."""
-        data = data - np.mean(data)
-        data = data / np.std(data)
+        mean=np.mean(data)
+        std=np.std(data)
+        data = data - mean
+        data = data / std
         data[np.isnan(data)] = 0
-        return data
+        return data,round(mean,3),round(std,3)
 
     @staticmethod
     def standardized_label(label):
