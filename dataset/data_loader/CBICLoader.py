@@ -135,7 +135,7 @@ class CBICLoader(BaseLoader):
         if config_preprocess.USE_PSUEDO_PPG_LABEL:
             bvps = self.generate_pos_psuedo_labels(frames, fs=self.config_data.FS)
         else:
-            bvps = self.read_wave(os.path.join(data_dirs[i]['path'], "PPG_R.csv"))
+            bvps = self.read_wave(os.path.join(data_dirs[i]['path'], "syn_PPG_R.csv"))
 
         target_length = frames.shape[0]
         bvps = BaseLoader.resample_ppg(bvps, target_length)

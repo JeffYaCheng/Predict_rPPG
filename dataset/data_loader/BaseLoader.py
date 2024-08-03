@@ -25,6 +25,7 @@ from tqdm import tqdm
 from retinaface import RetinaFace   # Source code: https://github.com/serengil/retinaface
 import shutil
 import matplotlib.pyplot as plt
+import mediapipe as mp
 
 
 class BaseLoader(Dataset):
@@ -336,6 +337,51 @@ class BaseLoader(Dataset):
             else:
                 print("ERROR: No Face Detected")
                 face_box_coor = [0, 0, frame.shape[0], frame.shape[1]]
+        elif backend=="HAND":
+            print('Hand')
+            mpHands=mp.solutions.hands
+            #呼叫模型中的函數
+            hands=mpHands.Hands(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+            #把landmark畫在圖片上
+            mpDraw=mp.solutions.drawing_utils
+            imgHeight = frame.shape[0]
+            imgWidth = frame.shape[1]
+            result=hands.process(frame)
+            if  result.multi_hand_landmarks==None:
+                print("ERROR: No Hand Detected")
+                face_box_coor = [0, 0, frame.shape[0], frame.shape[1]]
+                """ 先取第一個
+            elif len(result.multi_hand_landmarks) >= 2:
+                max_width_index = np.argmax(result[:, 2])  # Index of maximum width
+                hand_box_coor = face_zone[max_width_index]
+                print("Warning: More than one hands are detected(Only cropping the biggest one.)")
+                """
+            else:
+                x=int(result.multi_hand_landmarks[0].landmark[5].x* imgWidth)
+                y=int(result.multi_hand_landmarks[0].landmark[5].y* imgHeight)
+                x2=int(result.multi_hand_landmarks[0].landmark[17].x* imgWidth)
+                y2=int(result.multi_hand_landmarks[0].landmark[0].y* imgHeight)
+                #print('5:',result.multi_hand_landmarks[0].landmark[5])
+                #print('17:',result.multi_hand_landmarks[0].landmark[17])
+                #print('0:',result.multi_hand_landmarks[0].landmark[0])
+                #print(x,y,x2,y2)
+                w=abs(x-x2)
+                h=abs(y-y2)
+                top_x=min(x,x2)
+                top_y=min(y,y2)
+                face_box_coor=[top_x,top_y,w,h]
+                """
+                for handLms in result.multi_hand_landmarks: #預防有兩支以上的手
+                    mpDraw.draw_landmarks(frame,handLms,mpHands.HAND_CONNECTIONS)
+                    # 標出每一個座標點編號與位置
+                    for j, lm in enumerate(handLms.landmark):
+                        xPos = int(lm.x * imgWidth)
+                        yPos = int(lm.y * imgHeight)
+                        cv2.putText(frame,str(j),(xPos-25,yPos+5),cv2.FONT_HERSHEY_SIMPLEX,0.4,(0,0,225),2) #放字 字：str(i) 位置、字型、字型大小、顏色、粗度
+                        #print(i,xPos,yPos)
+                cv2.imshow('crop', frame)
+                cv2.waitKey(100)
+                """
         else:
             raise ValueError("Unsupported face detection backend!")
 

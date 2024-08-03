@@ -7,14 +7,14 @@
        datasets/CBIC/
          |   |-- 01-01/
          |      |-- output.avi
-         |      |-- PPG_R.csv
+         |      |-- syn_PPG_R.csv
          |   |-- 01-02/
          |      |-- output.avi
-         |      |-- PPG_R.csv
+         |      |-- syn_PPG_R.csv
          |...
          |   |-- ii-jj/
          |      |-- output.avi
-         |      |-- PPG_R.csv
+         |      |-- syn_PPG_R.csv
 -----------------
 
 # Use Pre-trained model to inference
@@ -26,10 +26,15 @@
     - `CACHED_PATH`: r"./datasets/PreprocessedData"    
         - Processed dataset save path, need to be updated
     - `EXP_DATA_NAME`: "CBIC_rPPG" 
-        - the name of this run result
+        - The name of this run result
+    - `BACKEND`： HAND / HC
+        - HAND：using hand to predict rPPG
+        - HC：using face to predict rPPG
     - You can modify other paramter depend on your situation
 - Run `python main.py --config_file ./configs/infer_configs/PURE_CBIC_TSCAN.yaml`
 - Preprocessing images will save in the `CACHED_PATH`
-- Signal results will save in the `runs/exp/EXP_DATA_NAME/saved_test_outputs/waveforms`
+- Signal wave picture will save in the `runs/exp/EXP_DATA_NAME/saved_test_outputs/waveforms`
+- Signal wave csv fils will save in the `DATA_PATH`
+- 
 # Reference
 - [rPPG-Toolbox](https://github.com/ubicomplab/rPPG-Toolbox)

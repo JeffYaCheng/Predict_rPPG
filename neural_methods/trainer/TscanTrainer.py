@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 from collections import OrderedDict
-
+import glob
 import numpy as np
 import pandas as pd
 import torch
@@ -37,6 +37,7 @@ class TscanTrainer(BaseTrainer):
         self.config = config 
         self.min_valid_loss = None
         self.best_epoch = 0
+        self.ori_data_path=config.TEST.DATA.DATA_PATH
 
         if config.TOOLBOX_MODE == "train_and_test":
             self.model = TSCAN(frame_depth=self.frame_depth, img_size=config.TRAIN.DATA.PREPROCESS.RESIZE.H).to(self.device)
@@ -239,6 +240,7 @@ class TscanTrainer(BaseTrainer):
             t_Cor=0
             t_MAE=0
             counter=0
+            predict_signal=list()
             for sort in sorts:
                 
                 pic_name = os.path.join(pic_path,pred_key + "_" + str(sort) + ".png")
@@ -265,6 +267,7 @@ class TscanTrainer(BaseTrainer):
                     prediction = _detrend(np.cumsum(prediction), 100)
                     prediction = scipy.signal.filtfilt(b, a, np.double(prediction))
                 # detrend???           
+                predict_signal.append(prediction)          
                 #ground_truth = scipy.signal.filtfilt(b, a, np.double(ground_truth))
                 
                 # add MAE and pearson to each wave
@@ -292,6 +295,23 @@ class TscanTrainer(BaseTrainer):
                 plt.legend()
                 plt.savefig(pic_name)
                 plt.close()
+            first = predict_signal[0]
+            
+            for i in range(1,len(predict_signal)):
+                first=np.append(first,predict_signal[i])
+            print('first_signal shape = ',first.shape)
+            df = pd.DataFrame(first)
+            data_dirs = glob.glob(self.ori_data_path + os.sep + "*-*")
+            #print('data_dirs = ',data_dirs)
+            for data_dir in data_dirs:
+                subject_trail_val = os.path.split(data_dir)[-1].replace('-', '')
+                subject_trail_val=int(subject_trail_val)
+                #print('subject_trail_val = ' ,subject_trail_val)
+                #print('pred_key = ',pred_key)
+                if(int(pred_key)==subject_trail_val):
+                    print(data_dir)
+                    print('==============pred_key = ',pred_key)
+                    df.to_csv(os.path.join(data_dir,'rPPG.csv'), index=False)
         
         result_dict={'name':name,'Cor':Cor_list,'MAE':MAE_list}
         df=pd.DataFrame(result_dict)
